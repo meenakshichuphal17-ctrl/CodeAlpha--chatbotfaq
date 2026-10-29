@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAQ Chatbot</title>
+
+<!-- =====================================================
+     TASK 2: Chatbot for FAQs  (HTML + CSS + JavaScript)
+     1. Collect FAQs      -> FAQS array
+     2. Preprocess text   -> tokenize, clean, stopwords, stemming
+     3. Match questions   -> TF-IDF + cosine similarity
+     4. Display answer    -> shown as a chatbot reply
+     5. Optional chat UI  -> this page
+     ===================================================== -->
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .chat-container {
+    width: 100%;
+    max-width: 480px;
+    height: 85vh;
+    max-height: 680px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .chat-header {
+    background: #4c51bf;
+    color: #fff;
+    padding: 16px 20px;
+  }
+  .chat-header h1 { font-size: 18px; }
+  .chat-header p  { font-size: 12px; opacity: 0.85; margin-top: 3px; }
+
+  .chat-box {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    background: #f4f5fb;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .message {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.45;
+    word-wrap: break-word;
+  }
+  .message.bot  { background: #ffffff; color: #222; align-self: flex-start;
+                  border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .message.user { background: #4c51bf; color: #fff; align-self: flex-end;
+                  border-bottom-right-radius: 4px; }
+
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #f4f5fb;
+  }
+  .chip {
+    background: #fff;
+    border: 1px solid #4c51bf;
+    color: #4c51bf;
+    border-radius: 16px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .chip:hover { background: #4c51bf; color: #fff; }
+
+  .input-area {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #e2e4ef;
+    background: #fff;
+  }
+  .input-area input {
+    flex: 1;
+    padding: 11px 14px;
+    border: 1px solid #ccd0e4;
+    border-radius: 22px;
+    font-size: 14px;
+    outline: none;
+  }
+  .input-area input:focus { border-color: #4c51bf; }
+  .input-area button {
+    background: #4c51bf;
+    color: #fff;
+    border: none;
+    border-radius: 22px;
+    padding: 0 20px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .input-area button:hover { background: #3c40a0; }
+</style>
+</head>
+
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <h1>🛍️ FAQ Chatbot</h1>
+      <p>Ask me about orders, returns, payments and delivery</p>
+    </div>
+
+    <div class="chat-box" id="chatBox"></div>
+
+    <div class="suggestions" id="suggestions"></div>
+
+    <div class="input-area">
+      <input type="text" id="userInput" placeholder="Type your question..." autocomplete="off">
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+<script>
+/* ----------------------------------------------------------------
+   1. COLLECT FAQs  (topic: an online shopping store)
+   ---------------------------------------------------------------- */
+const FAQS = [
+  { q: "How can I track my order?",
+    a: "Go to 'My Orders' in your account and click 'Track Order'. You will also receive a tracking link by email and SMS once it ships." },
+  { q: "How do I return a product?",
+    a: "You can return most items within 30 days of delivery. Open 'My Orders', select the item and click 'Return'. We will arrange a free pickup." },
+  { q: "What is your refund policy?",
+    a: "Refunds are issued to your original payment method within 5-7 business days after we receive the returned item." },
+  { q: "How long does delivery take?",
+    a: "Standard delivery takes 3-5 business days. Express delivery takes 1-2 business days." },
+  { q: "What payment methods do you accept?",
+    a: "We accept credit cards, debit cards, UPI, net banking, wallets and cash on delivery." },
+  { q: "How can I cancel my order?",
+    a: "You can cancel an order before it ships from 'My Orders' by clicking 'Cancel Order'. After shipping, you need to use the return option." },
+  { q: "How do I reset my password?",
+    a: "Click 'Forgot Password' on the login page, enter your email, and follow the link we send you to set a new password." },
+  { q: "How do I create an account?",
+    a: "Click 'Sign Up' at the top right, enter your name, email and password, and verify your email address." },
+  { q: "Do you offer international shipping?",
+    a: "Yes, we ship to over 50 countries. Shipping charges and delivery time depend on the destination." },
+  { q: "How can I contact customer support?",
+    a: "You can reach us by email at support@example.com, by phone at 1800-000-000 (9 AM - 6 PM), or through live chat on our website." },
+  { q: "Is there a warranty on products?",
+    a: "Yes, electronics come with a 1-year manufacturer warranty. Check the product page for specific warranty details." },
+  { q: "How do I apply a discount coupon?",
+    a: "Enter your coupon code in the 'Apply Coupon' box on the cart page before checkout. The discount will be shown in your order summary." },
+  { q: "What should I do if I receive a damaged item?",
+    a: "We are sorry about that! Report it within 48 hours from 'My Orders' with a photo, and we will send a replacement or give a full refund." },
+  { q: "Are my payment details secure?",
+    a: "Yes. All payments are encrypted and processed through secure, PCI-DSS compliant payment gateways. We never store your card details." },
+  { q: "Can I change my delivery address?",
+    a: "You can change the address before the order ships from 'My Orders' -> 'Edit Address'. After shipping, please contact customer support." }
+];
+
+const GREETINGS = ["hi", "hello", "hey", "hii", "hola", "namaste"];
+const EXIT_WORDS = ["exit", "quit", "bye", "goodbye"];
+const FALLBACK = "Sorry, I couldn't find a good answer to that. Please try rephrasing your question or contact customer support.";
+const SIMILARITY_THRESHOLD = 0.20;   // below this score the bot says "I don't know"
+
+/* ----------------------------------------------------------------
+   2. PREPROCESS TEXT  (clean, tokenize, synonyms, stopwords, stem)
+   ---------------------------------------------------------------- */
+const STOPWORDS = new Set((
+  "a about above after again all am an and any are as at be because been before being below " +
+  "between both but by can could did do does doing down during each few for from further had has " +
+  "have having he her here hers him his how i if in into is it its just me more most my no nor " +
+  "not now of off on once only or other our out over own same she should so some such than that " +
+  "the their them then there these they this those through to too under until up us very was we " +
+  "were what when where which while who whom why will with would you your yours want need get " +
+  "please tell know"
+).split(" "));
+
+// Phrases people commonly use -> the words our FAQs use
+const PHRASE_MAP = {
+  "money back": "refund",
+  "get my money": "refund",
+  "where is my order": "track order",
+  "where is my package": "track order",
+  "where is my parcel": "track order"
+};
+
+// Single-word synonyms -> the word our FAQs use
+const WORD_MAP = {
+  pay: "payment", paying: "payment", paid: "payment",
+  cards: "payment", card: "payment", upi: "payment",
+  reimburse: "refund", reimbursement: "refund", repay: "refund",
+  exchange: "return", replace: "return",
+  shipping: "delivery", shipment: "delivery", arrive: "delivery", arrived: "delivery",
+  package: "order", parcel: "order", purchase: "order",
+  forgot: "reset", forget: "reset", login: "account",
+  register: "account", signup: "account",
+  help: "support", contact: "support", call: "support",
+  broken: "damaged", defective: "damaged", faulty: "damaged",
+  promo: "coupon", voucher: "coupon", code: "coupon",
+  safe: "secure", safety: "secure", security: "secure",
+  abroad: "international", overseas: "international"
+};
+
+// A small suffix-stripping stemmer (simple version of Porter stemmer)
+function stem(w) {
+  if (w.length <= 3) return w;
+  if (w.endsWith("sses")) w = w.slice(0, -2);
+  else if (w.endsWith("ies")) w = w.slice(0, -3) + "y";
+  else if (w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
+
+  if (w.endsWith("ing") && w.length > 5) w = w.slice(0, -3);
+  else if (w.endsWith("ed") && w.length > 4) w = w.slice(0, -2);
+
+  if (w.endsWith("e") && w.length > 4) w = w.slice(0, -1);
+  return w;
+}
+
+// Returns an array of cleaned tokens (words)
+function preprocess(text) {
+  text = String(text).toLowerCase();
+  for (const phrase in PHRASE_MAP) {
+    text = text.split(phrase).join(PHRASE_MAP[phrase]);
+  }
+  let tokens = text.match(/[a-z0-9]+/g) || [];           // tokenize + remove punctuation
+  tokens = tokens.map(t => WORD_MAP[t] || t);             // synonyms
+  tokens = tokens.filter(t => !STOPWORDS.has(t));         // remove stopwords
+  return tokens.map(stem);                                // stemming
+}
+
+// Words + pairs of neighbouring words (bigrams), like ngram_range=(1,2)
+function toFeatures(tokens) {
+  const feats = tokens.slice();
+  for (let i = 0; i < tokens.length - 1; i++) {
+    feats.push(tokens[i] + " " + tokens[i + 1]);
+  }
+  return feats;
+}
+
+/* ----------------------------------------------------------------
+   3. MATCH USER QUESTION WITH THE MOST SIMILAR FAQ
+      (TF-IDF vectors + cosine similarity)
+   ---------------------------------------------------------------- */
+class FAQChatbot {
+  constructor(faqs) {
+    this.faqs = faqs;
+
+    // Each FAQ is indexed twice: question only, and question + answer
+    const questionDocs = faqs.map(f => toFeatures(preprocess(f.q)));
+    const fullDocs     = faqs.map(f => toFeatures(preprocess(f.q + " " + f.a)));
+    const allDocs      = questionDocs.concat(fullDocs);
+
+    // Build vocabulary and IDF (inverse document frequency)
+    const df = {};
+    allDocs.forEach(doc => new Set(doc).forEach(t => { df[t] = (df[t] || 0) + 1; }));
+    this.idf = {};
+    const n = allDocs.length;
+    for (const t in df) {
+      this.idf[t] = Math.log((1 + n) / (1 + df[t])) + 1;
+    }
+
+    this.questionVecs = questionDocs.map(d => this.vectorize(d));
+    this.fullVecs     = fullDocs.map(d => this.vectorize(d));
+  }
+
+  // Turn a list of features into a normalized TF-IDF vector (object)
+  vectorize(features) {
+    const vec = {};
+    features.forEach(t => {
+      if (this.idf[t] !== undefined) vec[t] = (vec[t] || 0) + 1;
+    });
+    let norm = 0;
+    for (const t in vec) {
+      vec[t] = vec[t] * this.idf[t];
+      norm += vec[t] * vec[t];
+    }
+    norm = Math.sqrt(norm);
+    if (norm > 0) for (const t in vec) vec[t] /= norm;
+    return vec;
+  }
+
+  // Both vectors are already normalized, so dot product = cosine similarity
+  cosine(a, b) {
+    let sum = 0;
+    for (const t in a) if (b[t] !== undefined) sum += a[t] * b[t];
+    return sum;
+  }
+
+  getResponse(userInput) {
+    const text = userInput.trim();
+    if (!text) return "Please type a question.";
+
+    const lowered = text.toLowerCase().replace(/[^a-z ]/g, "").trim();
+    if (GREETINGS.includes(lowered)) {
+      return "Hello! I'm the FAQ bot. Ask me anything about orders, returns, payments or delivery.";
+    }
+    if (EXIT_WORDS.includes(lowered)) {
+      return "Goodbye! Have a great day.";
+    }
+
+    const features = toFeatures(preprocess(text));
+    const userVec = this.vectorize(features);
+    if (Object.keys(userVec).length === 0) return FALLBACK;   // no known words
+
+    let bestScore = 0, bestIndex = -1;
+    for (let i = 0; i < this.faqs.length; i++) {
+      // question match counts more than question+answer match
+      const score = 0.7 * this.cosine(userVec, this.questionVecs[i]) +
+                    0.3 * this.cosine(userVec, this.fullVecs[i]);
+      if (score > bestScore) { bestScore = score; bestIndex = i; }
+    }
+
+    if (bestIndex === -1 || bestScore < SIMILARITY_THRESHOLD) return FALLBACK;
+    return this.faqs[bestIndex].a;
+  }
+}
+
+/* ----------------------------------------------------------------
+   4 & 5. DISPLAY THE ANSWER AS A CHATBOT RESPONSE (chat UI)
+   ---------------------------------------------------------------- */
+if (typeof document !== "undefined") {
+  const bot = new FAQChatbot(FAQS);
+
+  const chatBox = document.getElementById("chatBox");
+  const userInput = document.getElementById("userInput");
+  const sendBtn = document.getElementById("sendBtn");
+  const suggestions = document.getElementById("suggestions");
+
+  function addMessage(text, sender) {
+    const div = document.createElement("div");
+    div.className = "message " + sender;
+    div.textContent = text;            // textContent keeps user text safe
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  function sendMessage(text) {
+    text = (text !== undefined ? text : userInput.value).trim();
+    if (!text) return;
+    addMessage(text, "user");
+    userInput.value = "";
+
+    // small delay so it feels like the bot is "thinking"
+    setTimeout(() => addMessage(bot.getResponse(text), "bot"), 400);
+  }
+
+  sendBtn.addEventListener("click", () => sendMessage());
+  userInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") sendMessage();
+  });
+
+  // Quick-question buttons
+  ["How can I track my order?", "What is your refund policy?",
+   "What payment methods do you accept?", "How long does delivery take?"
+  ].forEach(q => {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = q;
+    chip.addEventListener("click", () => sendMessage(q));
+    suggestions.appendChild(chip);
+  });
+
+  addMessage("Hi! 👋 Ask me anything about orders, returns, payments or delivery.", "bot");
+  userInput.focus();
+}
+</script>
+</body>
+</html>
